@@ -1,208 +1,126 @@
 <?php
-/**********************mediafire.com****************************\
-mediafire.com Download Plugin
-WRITTEN by Raj Malhotra on 1 Jan 2011
-\**********************mediafire.com****************************/
 
-if (! defined ( 'RAPIDLEECH' ))
-{
-	require_once ("index.html");
-	exit ();
+if (!defined('RAPIDLEECH')) {
+	require_once('index.html');
+	exit;
 }
 
-class mediafire_com extends DownloadClass
-{
-	public function Download( $link )
-	{
-		global $premium_acc;
-		
-		$link = str_replace( "download.php", "", $link );
-		
-		if ( $_POST['step'] == 1 )
-		{
-			// password protected file
-			$file_password = $_POST['password'];
+class mediafire_com extends DownloadClass {
+	private $page = '', $cookie = array(), $fid, $link;
+	public function Download($link) {
+		if (!empty($_POST['mfpassword'])) {
+			$this->cookie = StrToCookies(urldecode($_POST['cookie']));
+			$this->page = $this->GetPage($link, $this->cookie, array('downloadp' => urlencode($_POST['mfpassword'])), $link);
+			$this->cookie = GetCookiesArr($this->page, $this->cookie);
 		}
 
-		$this->checkLink( $link, $file_password );
-		
-		if ( ( $_REQUEST ["premium_acc"] == "on" && $_REQUEST ["premium_user"] && $_REQUEST ["premium_pass"] ) ||
-			( $_REQUEST ["premium_acc"] == "on" && $premium_acc ["mediafire_com"] ["user"] && $premium_acc ["mediafire_com"] ["pass"] ) )
-		{
-			$this->downloadPremium( $link, $file_password );
-		}
-		else
-		{
-			$this->downloadFree( $link, $file_password );
-		}
-	}
-	
-	private function checkLink( $link, $file_password )
-	{
-		$page = $this->GetPage( $link );
-		$cookie = GetCookies( $page );
-		
-		if ( ( ! $file_password ) && ( stristr ( $page, "Eo();  dh('')" ) ) )
-		{
-			global $Referer, $nn;
-			print "<div align='center'><b>File is password protected</b></div> $nn";
-			print "<form name='dl' action=\"$PHP_SELF\" method='post'> $nn";
-			print "<input type='hidden' name='link' value='" . urlencode ( $link ) . "'> $nn";
-			print "<input type='hidden' name='step' value='1'> $nn";
-			print "<input type='hidden' name='referer' value='" . urlencode ( $Referer ) . "'>";
-			print "<input type='hidden' name='comment' id='comment' value='" . $_GET ["comment"] . "'>$nn";
-			print "<input type='hidden' name='email' id='email' value='" . $_GET ["email"] . "'>$nn";
-			print "<input type='hidden' name='partSize' id='partSize' value='" . $_GET ["partSize"] . "'>$nn";
-			print "<input type='hidden' name='method' id='method' value='" . $_GET ["method"] . "'>$nn";
-			print "<input type='hidden' name='proxy' id='proxy' value='" . $_GET ["proxy"] . "'>$nn";
-			print "<input type='hidden' name='proxyuser' id='proxyuser' value='" . $_GET ["proxyuser"] . "'>$nn";
-			print "<input type='hidden' name='proxypass' id='proxypass' value='" . $_GET ["proxypass"] . "'>$nn"; 
-			print "<input type='hidden' name='path' id='path' value='" . $_GET ["path"] . "'>$nn";
-			print "<h4>Enter password here: <input type='text' name='password' size='13'>&nbsp;&nbsp;";
-			print "<input type='submit' onclick='return check()' value='Download File'></h4>$nn";
-			print "<script language='JavaScript'>" . $nn . "function check() {" . $nn . "var imagecode=document.dl.imagestring.value;" . $nn . 'if (imagecode == "") { window.alert("You didn\'t enter the image verification code"); return false; }' . $nn . 'else { return true; }' . $nn . '}' . $nn . '</script>' . $nn;
-			print "</form>$nn";
-			print "</body>$nn";
-			print "</html>";
-			exit ();
-		}
-		
-		if ( preg_match('/Location: *(.+)/i', $page, $newredir ) )
-		{
-			$Href = trim ( $newredir [1] );
-			if ( !( strpos( $Href, "error.php" ) === false ) )
-			{
-				html_error('Invalid or Deleted File');
-				return;
+		if (!preg_match('@https?://(?:[\w\-]+\.)*mediafire\.com/(?:(download|file)/|(download\.php|file/|view/)?\??)([\w\-\.]+)(?(1)(/[^/\s]+))?@i', $link, $this->fid)) html_error('Invalid Link?');
+
+		$this->link = $GLOBALS['Referer'] = 'http://www.mediafire.com/file/' . $this->fid[3] . (!empty($this->fid[4]) ? $this->fid[4] : '');
+
+		if (empty($_POST['step']) || $_POST['step'] != '1') {
+			$this->page = $this->GetPage($this->link, $this->cookie, 0, 'http://www.mediafire.com/?' . $this->fid[3]);
+			$this->cookie = GetCookiesArr($this->page, $this->cookie);
+			if (preg_match('@\nLocation: .*(/file/([^/\r\n]+)/?[^\r\n]*)@i', $this->page, $redir)) {
+				$this->link = $GLOBALS['Referer'] = 'http://www.mediafire.com'.$redir[1];
+				$this->page = $this->GetPage($this->link, $this->cookie);
+				$this->cookie = GetCookiesArr($this->page, $this->cookie);
+			}
+			if (preg_match('@/error\.php\?errno=\d+@i', $this->page, $redir)) {
+				$this->page = $this->GetPage('http://www.mediafire.com'.$redir[0]);
+				if (preg_match('@error_msg_title(?: notranslate)?">\s*([^\r\n<>]+)\s*<@i', $this->page, $err)) html_error($err[1]);
+				html_error('Link is not available');
 			}
 		}
-		else
-		{
-			// checking is it a mediafire folder
-			$this->isMediaFireFolder( $page, $cookie );
+
+		$this->MF_Captcha();
+		if (strpos($this->page, 'name="downloadp" id="downloadp"')) {
+			$DefaultParam = $this->DefaultParamArr(preg_replace('@/file/([^/]+)/?.*@i', '/?$1', $link), $this->cookie);
+			echo "<form action='".htmlspecialchars($GLOBALS['PHP_SELF'], ENT_QUOTES)."' method='POST'>\n";
+			foreach ($DefaultParam as $key => $value) echo "<input type='hidden' name='$key' value='" . htmlspecialchars($value, ENT_QUOTES) . "' />\n";
+			echo "Enter your password here:<br />\n<input type='text' name='mfpassword' value='' placeholder='Enter file password here' autofocus='autofocus' required='required' />\n<input type='submit' />\n</form>";
+			return html_error('File requires password');
 		}
+		if (!preg_match('@https?://(?:[\w\-]+\.)+[\w\-]+(?:\:\d+)?/[\w\-\.]{5,}/' . preg_quote($this->fid[3]) . '/[^\?\'\"\t<>\r\n\\\]+@i', $this->page, $dl)) return html_error("Error: Download link [FREE] not found!");
+		$this->RedirectDownload($dl[0], 'Mediafire.com');
 	}
-	
-	// Checking is it a mediafire folder or not? If yes, then moving it to auto downloader
-	private function isMediaFireFolder( $page, $cookie )
-	{
-		$data = htmlspecialchars_decode( $page );
-		$pattern = '/LoadJS\("((.+?)myfiles\.php(.+?))"/';
-		if ( preg_match( $pattern , $page, $sharekey ) )
-		{
-			$sharekey = $sharekey[1];
-			$getlinksharekey = "http://www.mediafire.com$sharekey";
-			$page = $this->GetPage( $getlinksharekey, $cookie );
-			if ( preg_match_all("/es\[[0-9]+\]=Array\('.*?','.*?',.*?,'(.*?)','.*?','(.*?)','.*?','(.*?)','(.*?)','.*?','.*?','.*?','.*?','.*?','.*?','.*?'\);/",$page ,$es))
-			{
-				$link_stack = array();
-				foreach ( $es[1] as $code )
-				{
-					$link_in_folder = "http://www.mediafire.com/?$code";
-					array_push( $link_stack, $link_in_folder);
-				}
-				$link_stack_length = count( $link_stack );
-				// Removing last element as it is some kind of hash
-				unset( $link_stack[$link_stack_length-1] );
-				
-				$this->moveToAutoDownloader( $link_stack );
+
+	private function MF_Captcha() {
+		if (!empty($this->page) && stripos($this->page, ">Authorize Download</a>") === false) return;
+		if (!empty($_POST['step']) && $_POST['step'] == '1') {
+			$_POST['step'] = false;
+			if (empty($_POST['recaptcha2_response_field']) && empty($_POST['recaptcha_response_field']) && empty($_POST['adcopy_response']) && empty($_POST['mf_captcha_response'])) html_error('You didn\'t enter the image verification code.');
+			if (empty($_POST['mf_captcha_response'])) {
+				if (empty($_POST['adcopy_response'])) {
+					if (empty($_POST['recaptcha2_public_key'])) $post = array('recaptcha_challenge_field' => urlencode($_POST['recaptcha_challenge_field']), 'recaptcha_response_field' => urlencode($_POST['recaptcha_response_field']));
+					else $post = $this->verifyReCaptchav2();
+				} else $post = $this->verifySolveMedia();
+				$this->cookie = StrToCookies(urldecode($_POST['cookie']));
+			} else {
+				$post = array('mf_captcha_response' => $_POST['mf_captcha_response']);
 			}
-		}
-	}
 
-	private function downloadPremium( $link, $file_password )
-	{
-		html_error ("Premium download supported not added yet, ask developer to add this support!", 0 );
-	}
-	
-	private function downloadFree( $link, $file_password )
-	{
-		$post = 0;
-		if ( $file_password )
-		{
-			// password protected file
-			$post = array();
-			$post['downloadp'] = $file_password;
-		}
+			$purl = 'http://www.mediafire.com/?' . $this->fid[3];
 
-		$page = $this->GetPage( $link, 0, $post );
-		$cookie = GetCookies( $page );
-		
-		if ( preg_match('/Location: *(.+)/i', $page, $newredir ) )
-		{
-			$Href = trim ( $newredir [1] );
-			if ( !( strpos( $Href, "error.php" ) === false ) )
-			{
-				html_error('Invalid or Deleted File');
-				return;
+			$this->page = $this->GetPage($purl, $this->cookie, $post);
+			$this->cookie = GetCookiesArr($this->page, $this->cookie);
+			is_present($this->page, 'Your entry was incorrect, please try again!');
+
+			$this->page = $this->GetPage($this->link, $this->cookie, 0, $purl);
+			$this->cookie = GetCookiesArr($this->page, $this->cookie);
+			is_present($this->page, 'Your entry was incorrect, please try again!.');
+
+			$this->MF_Captcha();
+		} else {
+			$data = $this->DefaultParamArr($this->link, $this->cookie);
+			$data['step'] = 1;
+
+			if (($pos = stripos($this->page, 'data-sitekey=')) !== false && preg_match('@data-sitekey=\s*[\"\']([\w\.\-]+)[\"\']@i', $this->page, $cKey, 0, $pos)) {
+				// reCAPTCHA v2
+				return $this->reCAPTCHAv2($cKey[1], $data);
+			} else if (($pos = stripos($this->page, '://api.solvemedia.com/')) !== false && preg_match('@https?://api\.solvemedia\.com/papi/challenge\.(?:no)?script\?k=([\w\.\-]+)@i', $this->page, $cKey, 0, $pos)) {
+				// SolveMedia
+				return $this->SolveMedia($cKey[1], $data);
+			} else if (preg_match('@https?://(?:[^/]+\.)?(?:(?:google\.com/recaptcha/api)|(?:recaptcha\.net))/(?:(?:challenge)|(?:noscript))\?k=([\w\.\-]+)@i', $this->page, $cKey)) {
+				// Old reCAPTCHA
+				return $this->reCAPTCHA($cKey[1], $data);
+			} else if (($pseudoCaptcha = cut_str($this->page, 'name="mf_captcha_response" value="', '"'))) {
+				// Best... CAPTCHA... Ever... :D
+				if (!empty($_POST['mf_captcha_response'])) html_error('Captcha Loop?');
+				$_POST['step'] = '1';
+				$_POST['mf_captcha_response'] = html_entity_decode($pseudoCaptcha);
+				return $this->MF_Captcha();
 			}
-		}
-		
-		list ($pagea, $pageb) = explode("default:DoShow", $page, 2);
-		$pageb = $this->str_conv($pageb);
-		$pageb = stripslashes(str_replace(" ", "", $pageb));
 
-		if (!preg_match("/=\W?(\w+)[\('\"]+(\w+)[,'\"]+(\w+)([,'\"]+(\w+))?['\"]+\)/", $pageb, $eb))
-			html_error('Error 1');
-		
-		$pages = explode("function", $pagea);
-		foreach ( $pages as $v )
-		{
-			$v = $this->str_conv($v);
-			if ( strstr($v, $eb[1]."(") ) 
-				break;
+			html_error('Error: CAPTCHA not found.');
 		}
-		
-		if (!preg_match("|getElementById\(.([0-9a-f]{32}).|", $v, $match)) 
-			html_error('Error 2');
-			
-		if (!$eb[5])
-		{
-			$pages = explode("\n", $pagea);
-			preg_match("|\w+=\W?(\w+)|", str_replace(" ", "", array_pop($pages)), $match_b);
-			$eb[5] = $match_b[1];
-		}
-
-		$Href = "http://www.mediafire.com/dynamic/download.php?qk=" . $eb[2] . "&pk1=" . $eb[3] . "&r=" . $eb[5];
-		$page = $this->GetPage( $Href, $cookie );
-		$page = $this->str_conv($page);
-		$page = stripslashes(str_replace(" ", "", $page));
-		$v = trim( cut_str($page, $match[1],'}') );
-		if (!preg_match("|http:[^\"']+(.\+(\w+)\+.)[^\"']+|", $v, $link_match)) 
-			html_error('Error get download link');
-			
-		if (!preg_match("/".$link_match[2]."=.([\w]+)/", $page, $match)) 
-			html_error('Error 3');
-			
-		$Href = str_replace($link_match[1], $match[1], $link_match[0]);
-		$Url = parse_url($Href);
-		$FileName = !$FileName ? basename($Url["path"]) : $FileName;
-
-		$this->RedirectDownload( $Href, $FileName );
 	}
-	
-	private function str_conv($str_or)
-	{
-		if (!preg_match("/unescape\([^\)]([^\)]+)[^\)]\);\w+=([0-9]+);[^\{^]+charCodeAt\(.\)([0-9\^]+)?/", $str_or, $match))
-			return $str_or;
-			
-		$str_de = urldecode($match[1]);
-		$match[3] = $match[3] ? $match[3] : "";
-		for ($i = 0; $i < $match[2]; $i++)
-		{
-			$c = ord(substr($str_de, $i, 1));
-			eval ("\$c = \$c".$match[3].";");
-			$str_re .= chr($c);
-		}
-		$str_re = str_replace($match[0], $str_re, $str_or);
-		if (preg_match("/unescape\([^\)]([^\)]+)[^\)]\).+charCodeAt\(.\)([0-9\^]+)/", $str_re, $dummy))
-			$str_re = $this->str_conv($str_re);
-		return $str_re;
+
+	// Special Function Called by verifyReCaptchav2 When Captcha Is Incorrect, To Allow Retry. - Required
+	protected function retryReCaptchav2() {
+		$data = $this->DefaultParamArr($this->link, $this->cookie);
+		$data['step'] = '1';
+
+		return $this->reCAPTCHAv2($_POST['recaptcha2_public_key'], $data);
 	}
 }
 
-/**********************mediafire.com****************************\
-mediafire.com Download Plugin
-WRITTEN by Raj Malhotra on 1 Jan 2011
-\**********************mediafire.com****************************/
-?>
+/*
+ * credit to farizemo [at] rapidleech forum
+ * by vdhdevil
+ * remove additional function for temporary fix until get finished - Ruud v.Tony 06-01-2011
+ * fix for shared premium link by Ruud v.Tony 23-01-2012
+ * regex fix for download link not found by Th3-822 24-02-2012
+ * added support for captcha by Th3-822 14-04-2012
+ * freedl regexp fixed again by Th3-822 10-05-2012
+ * incomplete fix for getting dllink by Th3-822 14-05-2012
+ * added solvemedia captcha support && fixed dead link msgs by Th3-822 06-10-2012
+ * quick fix for new format/redirect for share links && fixed capcha submit url by Th3-822 24-05-2013
+ * fixed password post url by Th3-822 27-07-2013
+ * fixed redirects by Th3-822 24-09-2013
+ * fixed captcha forms by Th3-822 11-04-2014
+ * added recaptcha v2 captcha support && fixed dead link msgs by Th3-822 07-04-2015
+ * added checkbox "captcha" support (non tested) by Th3-822 18-06-2015
+ * fixed link regexp, redirect by Th3-822 18-10-2016
+ * fixed download regexp by Th3-822 09-05-2018
+ */

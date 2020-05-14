@@ -1,35 +1,31 @@
 <?php
-if (!defined('RAPIDLEECH'))
-  {
-  require_once("index.html");
-  exit;
-  }
-$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"], 0, 0, 0, 0, $_GET["proxy"],$pauth);
-is_page($page);
-if(preg_match('/Location: *(.*)/i', $page, $redir)){
-	$href = trim($redir[1]);
-	$Url = parse_url($href);
-	$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"], 0, 0, 0, 0, $_GET["proxy"],$pauth);
-	is_page($page);
+if (!defined('RAPIDLEECH')) {
+	require_once ('index.html');
+	exit();
 }
-if(preg_match('/location="(.*)"/i', $page, $redir)){
-	$href = 'http://www.adrive.com'.trim($redir[1]);
-	$Url = parse_url($href);
-	$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"], 0, 0, 0, 0, $_GET["proxy"],$pauth);
-	is_page($page);
-}
-if(preg_match_all('/Set-Cookie: *(.+?);/', $page, $cook)){
-	$cookie = implode(";", $cook[1]);
-}else{
-	html_error("Cookie not found.", 0);
-}
-if(preg_match('/location\.href *= *"(.+)"/i', $page, $redir)){
-    $href = trim($redir[1]);
-}else{
-	html_error("URL not found.", 0);
-}
-$Url = parse_url($href);
-$FileName = !$FileName ? basename($Url["path"]) : $FileName;
 
-insert_location("$PHP_SELF?filename=".urlencode($FileName)."&host=".$Url["host"]."&path=".urlencode($Url["path"].($Url["query"] ? "?".$Url["query"] : ""))."&referer=".urlencode($Referer)."&cookie=".urlencode($cookie)."&email=".($_GET["domail"] ? $_GET["email"] : "")."&partSize=".($_GET["split"] ? $_GET["partSize"] : "")."&method=".$_GET["method"]."&proxy=".($_GET["useproxy"] ? $_GET["proxy"] : "")."&saveto=".$_GET["path"]."&link=".urlencode($LINK).($_GET["add_comment"] == "on" ? "&comment=".urlencode($_GET["comment"]) : "").($pauth ? "&pauth=$pauth" : "").(isset($_GET["audl"]) ? "&audl=doum" : ""));
+class adrive_com extends DownloadClass {
+	public function Download($link) {
+		if (!preg_match('@https?://(?:www\.)?adrive\.com/public/(?!(?:dir)?view)(\w+)(?:/|\.html?|$)@i', $link, $fid)) {
+			if (!preg_match('@https?://(?:\w+\.)*adrive\.com/public/dirview/(\w+)/(\d+)@i', $link, $fid)) html_error('Invalid Link?');
+			html_error('TODO: Add Folder Support.');
+		}
+
+		$page = $this->GetPage($link);
+		is_present($page, 'The file you are trying to access is no longer available publicly', 'File Private/Not Found');
+		is_present($page, 'The public file you are trying to download is associated with a non-valid ADrive account.');
+		$cookie = GetCookiesArr($page);
+
+		if (!preg_match("@https?://(?:\w+\.)*adrive\.com/public/view/{$fid[1]}(?:/[^\s\"\'<>]*|\.html?|$)@i", $page, $dlLink)) {
+			if (preg_match('@https?://(?:\w+\.)*adrive.com/public/{$fid[1]}.html@i', $page, $folder)) {
+				html_error('TODO: Add (Sub)?Folder Support.');
+			}
+			html_error('Download Link Not Found.');
+		}
+		$this->RedirectDownload($dlLink[0], 'adrive_com', $cookie);
+	}
+}
+
+// [15-5-15] Rewritten By Th3-822.
+
 ?>

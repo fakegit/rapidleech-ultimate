@@ -1,186 +1,130 @@
 <?php
-if (!defined('RAPIDLEECH'))
-  {
-  require_once("index.html");
-  exit;
-  }
 
-$post = Array();
+if (!defined('RAPIDLEECH')) {
+	require_once ('index.html');
+	exit();
+}
 
-$FileName = !$FileName ? basename($Url["path"]) : $FileName;
-$FileName = str_replace(".html", "", $FileName);
+class freakshare_com extends DownloadClass {
+	private $page, $cookie, $pA;
+	public function Download($link) {
+		global $premium_acc;
+		$this->link = $link = str_ireplace('freakshare.net/', 'freakshare.com/', $link);
+		$this->cookie = array();
+		$this->DLRegexp = '@https?://\w+\.freakshare\.com/get\.php\?dlid=\w+@i';
+		$this->pA = (empty($_REQUEST['premium_user']) || empty($_REQUEST['premium_pass']) ? false : true);
 
-if (($_GET["premium_acc"] == "on" && $_GET["premium_user"] && $_GET["premium_pass"]) || ($_GET["premium_acc"] == "on" && $premium_acc["freakshare_com"]["user"] && $premium_acc["freakshare_com"]["pass"]))
-{
-	$Url =  parse_url("http://freakshare.com/login.html");
-	$post["user"] = ($_GET["premium_user"] ? $_GET["premium_user"] : $premium_acc["freakshare_com"]["user"]);
-	$post["pass"] = ($_GET["premium_pass"] ? $_GET["premium_pass"] : $premium_acc["freakshare_com"]["pass"]);
-	$post["submit"] = "Login";
-	$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), 0, 0, $post, 0, $_GET["proxy"],$pauth);
-	is_page($page);
+		$_POST['step'] = empty($_POST['step']) ? false : $_POST['step'];
+		if (empty($_POST['step']) || !in_array($_POST['step'], array('1', '2'))) {
+			$this->page = $this->GetPage($this->link, $this->cookie);
+			if (stripos($this->page, 'selected="selected">English<') === false) {
+				$this->cookie = GetCookiesArr($this->GetPage('http://freakshare.com/index.php?language=EN', $this->cookie), $this->cookie);
+				$this->page = $this->GetPage($this->link, $this->cookie);
+			}
+			is_present($this->page, 'This file does not exist!');
+			$this->cookie = GetCookiesArr($this->page, $this->cookie);
+		} elseif (!empty($_POST['cookie'])) $this->cookie = StrToCookies(decrypt(urldecode($_POST['cookie'])));
 
-	is_notpresent($page, "Set-Cookie: login=", "Wrong Username or Password!");
-
-	$cookie = GetCookies($page);
-
-	$Url =  parse_url("http://freakshare.com/?language=EN");
-	$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), 0, $cookie, 0, 0, $_GET["proxy"],$pauth);
-	is_page($page);
-	is_present($page,"Member (free)", "Accounttype: <b>Member (free)</b>", 0);
-	insert_timer(5, "Please wait", true);
-
-	$Url =  parse_url($LINK);
-	$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), 0, $cookie, 0, 0, $_GET["proxy"],$pauth);
-	is_page($page);
-	is_present($page,"Your Traffic is used up for today!");
-	is_present($page,"This file does not exist!");
-
-	if (stristr($page, "Location:")) {
-		$Href = trim(cut_str($page, "Location:","\n"));
-		$Url =  parse_url($Href);
-	} else {
-		html_error ("Cannot get download link!", 0 );
+		if (($_REQUEST['premium_acc'] == 'on' && ($this->pA || (!empty($premium_acc['freakshare_com']['user']) && !empty($premium_acc['freakshare_com']['pass']))))) {
+			return $this->Login(($this->pA ? $_REQUEST['premium_user'] : $premium_acc['freakshare_com']['user']), ($this->pA ? $_REQUEST['premium_pass'] : $premium_acc['freakshare_com']['pass']));
+		} else return $this->FreeDL();
 	}
 
-} else {
-
-if ($_GET ["step"] != "second") {
-if ($_GET ["step"]!= "cu") {
-	$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $Referer, 0, 0, 0, $_GET["proxy"],$pauth);
-	is_page($page);
-
-	$info = cut_str($page, '<h1 style="text-align:center;" class="box_heading">','</h1>');
-	if(!$info){$info = cut_str($page, '<h1 class="box_heading" style="text-align:center;">','</h1>');}
-	echo "<center><b>$info</b></center>";
-	$cookie = GetCookies($page);
-	is_present($page,"This file does not exist!");
-	$countdowntime = trim(cut_str($page, "var time = ",";"));
-	?>
-<center><div id="cnt"><h4>ERROR: Please enable JavaScript.</h4></div></center>
-<form action="<?php echo $PHP_SELF; ?>" method="post">
-<input type="hidden" name="link" value="<?php echo $LINK; ?>">
-<input type="hidden" name="step" value="cu">
-<input type="hidden" name="cookies" value="<?php echo $cookie; ?>">
-<script language="JavaScript">
-var cu = <?php echo $countdowntime; ?>;
-fcu();
-function fcu() {
-	if(cu>0) {
-		if(cu>60){dt ="<font color=red>You reached your traffic limit.</font>";}else{dt ="<font color=yellow>FreakShare Free User</font>";}
-		document.getElementById("cnt").innerHTML = "<b>" + dt + "</b><br>Please wait <b>" + cu + "</b> seconds";
-		cu = cu - 1;
-		setTimeout("fcu()", 1000);
+	private function FreeDL() {
+		switch ($_POST['step']) {
+			default:
+				is_present($this->page, 'Your Traffic is used up for today!');
+				if (!preg_match('@\svar\s+time\s*=\s*(\d+)@i', $this->page, $cD)) html_error('Countdown not found.');
+				$this->cookie['ads_download'] = '1';
+				if ($cD[1] >= 0) {
+					if ($cD[1] > 59) {
+						$data = $this->DefaultParamArr($this->link, encrypt(CookiesToStr($this->cookie)));
+						$data['step'] = '1';
+						return $this->JSCountdown($cD[1] + 1, $data);
+					} else $this->CountDown($cD[1] + 1);
+				}
+			case '1':
+				$page = $this->GetPage($this->link, $this->cookie, array('section' => 'benefit', 'did' => '0'));
+				if (!preg_match('@https?://(?:[^/]+\.)?(?:(?:google\.com/recaptcha/api)|(?:recaptcha\.net))/(?:(?:challenge)|(?:noscript))\?k=([\w\.\-]+)@i', $page, $cpid)) html_error('CAPTCHA not found.');
+				$data = $this->DefaultParamArr($this->link, encrypt(CookiesToStr($this->cookie)));
+				$data['step'] = '2';
+				return $this->reCAPTCHA($cpid[1], $data);
+			case '2': break;
 		}
-	else {
-		document.getElementById("cnt").style.display="none";
-		void(document.forms[0].submit());
-		}
+
+		if (empty($_POST['recaptcha_response_field'])) html_error('You didn\'t enter the image verification code.');
+		$post = array('recaptcha_challenge_field' => $_POST['recaptcha_challenge_field'], 'recaptcha_response_field' => $_POST['recaptcha_response_field']);
+		$post['section'] = 'waitingtime';
+		$post['did'] = '0';
+
+		$page = $this->GetPage($this->link, $this->cookie, $post);
+		is_present($page, 'Wrong Captcha!', 'Login Failed: Wrong CAPTCHA entered.');
+
+		if (!preg_match($this->DLRegexp, $page, $DL)) html_error('Download Link Not Found.');
+		$this->RedirectDownload($DL[0], 'T8_Freakshare_FDL');
 	}
-</script>
-</form></body></html>
-<?php
-exit;
-}else{
-$cookie = $_GET ["cookies"];
-}
-	$post = Array();
-	$post["section"] = 'benefit';
-	$post["did"] = '0';
-	$post["submit"] = 'Free Download';
 
-	$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $Referer, $cookie, $post, 0, $_GET["proxy"],$pauth);
-	is_page($page);
-
-	$k = trim(cut_str($page, 'challenge?k=','"'));
-	preg_match('%input type="hidden" value="(.*)" name="did"%U', $page, $dids);
-	$did = $dids[1];
-
-	$post["section"] = 'waitingtime';
-	$post["submit"] = 'Download';
-if($k){
-//$k = "6Le1iwoAAAAAANwh1QwMQkA0eGvqbHkaKZO8FxFy";
-	$post["did"] = $did;
-	$post["recaptcha_response_field"] = 'manual_challenge';
-if(!$options["download_dir"]){$options["download_dir"] = $download_dir;}
-$arcapt = apireca($k, $options["download_dir"], $cookie, "freakshare");
-$post['recaptcha_challenge_field'] = $arcapt[rcf];
-
-	$code = '<center>';
-	$code .= '<form id="regularForm" method="post" action="'.$PHP_SELF.(isset($_GET["audl"]) ? "?audl=doum" : "").'">'.$nn;
-	$code .= '<input type="hidden" name="step" value="second">'.$nn;
-	$code .= '<input type="hidden" name="post" value="'.urlencode(serialize($post)).'">'.$nn;
-	$code .= '<input type="hidden" name="link" value="'.urlencode($LINK).'">'.$nn;
-	$code .= '<input type="hidden" name="cookie" value="'.urlencode($arcapt[cookie]).'">'.$nn;
-	$code .= '<h4>Enter the code shown below<br><img src="'.$arcapt[capfile].'"><br>here: <input type="text" name="captcha"><br>'.$nn;
-	$code .= '<input type="submit" value="Download">'.$nn;
-	$code .= '</form></h4></center>';
-	echo ($code) ;exit;
-}
-
-		$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $Referer, $cookie, $post, 0, $_GET["proxy"],$pauth);
-
-	$cookie .= "; " . GetCookies($page);
-
-	if(preg_match('/Location: *(.+)/i', $page, $redir )){
-	$dowlink = trim( $redir[1] );
-	$Url = parse_url( $dowlink );
-	}else{html_error( "Error getting download link" , 0 );}
-
-}else{
-
-	$post = array();
-		$post = unserialize(urldecode($_POST['post']));
-		$post['recaptcha_response_field'] = $_POST['captcha'];
-		$cookie = urldecode($_POST["cookie"]);
-		$LINK = urldecode($_POST[link]);
-		$Url = parse_url( $LINK );
-		$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $LINK, $cookie, $post, 0, $_GET["proxy"],$pauth);
-
-	is_present($page,"Captcha Incorrect!");
-	$cookie .= "; " . GetCookies($page);
-
-	if(preg_match('/Location: *(.+)/i', $page, $redir )){
-	$dowlink = cut_str ($page ,"Location: ","\r");
-	$Url = parse_url( $dowlink );
-	}else{html_error( "Error getting download link" , 0 );}
-}
-}
-
-	if (function_exists(encrypt) && $cookie!=""){$cookie=encrypt($cookie);}
-insert_location("$PHP_SELF?filename=". urlencode($FileName)."&force_name=".urlencode($FileName)."&host=".$Url["host"]."&port=".$Url["port"]."&path=".urlencode($Url["path"].($Url["query"] ? "?".$Url["query"] : ""))."&referer=".urlencode($Referer)."&cookie=".urlencode($cookie)."&email=".($_GET["domail"] ? $_GET["email"] : "")."&partSize=".($_GET["split"] ? $_GET["partSize"] : "")."&method=".$_GET["method"]."&proxy=".($_GET["useproxy"] ? $_GET["proxy"] : "")."&saveto=".$_GET["path"]."&link=".urlencode($LINK).($_GET["add_comment"] == "on" ? "&comment=".urlencode($_GET["comment"]) : "").($pauth ? "&pauth=$pauth" : "").(isset($_GET["audl"]) ? "&audl=doum" : ""));
-
-
-function apireca($k, $optionsd, $cookies, $sr){
-		$Url = parse_url("http://api.recaptcha.net/challenge?k=$k");
-		$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $Referer, 0, 0, 0, $_GET["proxy"],$pauth);
-		is_page($page);
-	if(preg_match('/Location: *(.+)/i', $page, $redir )){
-	$newreca = trim( $redir[1] );
-	$Url = parse_url( $newreca );
-	$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $Referer, $cookies, 0, 0, $_GET["proxy"], $pauth);
-	is_page($page);
-		$rcf = cut_str ( $page ,"challenge:'" ,"'" );
-		if(!$rcf){$rcf = cut_str ( $page ,"challenge : '" ,"'" );}
-		$Url = parse_url("http://www.google.com/recaptcha/api/image?c=".$rcf);
-	}else{
-		$rcf = cut_str ( $page ,"challenge : '" ,"'" );	
-		$cookie = GetCookies($page);
-		$Url = parse_url("http://api.recaptcha.net/image?c=".$rcf);
+	private function PremiumDL() {
+		$page = $this->GetPage($this->link, $this->cookie);
+		if (!preg_match($this->DLRegexp, $page, $DL)) {
+			$this->cookie = GetCookiesArr($page, $this->cookie);
+			$page = $this->GetPage($this->link, $this->cookie, array('section' => 'waitingtime', 'did' => '0'));
+			if (!preg_match($this->DLRegexp, $page, $DL)) html_error('Download-Link Not Found.');
 		}
-		$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $Referer, $cookie, 0, 0, $_GET["proxy"],$pauth);
-		$headerend = strpos($page,"\r\n\r\n");
-		$cap_img = substr($page,$headerend+4);
-		$capfile = $optionsd.$sr."_captcha.jpg";
-		if (file_exists($capfile)){unlink($capfile);} 
-		write_file($capfile, $cap_img);
-if(!$rcf){html_error("Error getting captcha", 0);}
-	$cookies .= "; " . $cookie;
-$arcapt = array();
-$arcapt[cookie] = $cookies;
-$arcapt[rcf] = $rcf;
-$arcapt[capfile] = $capfile;
-return $arcapt;
+		$this->RedirectDownload($DL[0], 'T8_Freakshare_PDL');
+	}
 
+	private function Login($user, $pass) {
+		if (empty($user) || empty($pass)) html_error('Login Failed: User or Password is empty. Please check login data.');
+		$post = array();
+		$post['user'] = urlencode($user);
+		$post['pass'] = urlencode($pass);
+		$post['submit'] = 'Login';
+
+		$purl = 'http://freakshare.com/';
+		$page = $this->GetPage($purl.'login.html', $this->cookie, $post, $purl);
+		if (substr($page, 9, 3) == '200') is_present($page, 'Wrong Username or Password!', 'Login failed: User/Password incorrect.');
+
+		$this->cookie = GetCookiesArr($page);
+		if (empty($this->cookie['login'])) html_error('Login Error: Cannot find session cookie.');
+
+		$page = $this->GetPage($purl, $this->cookie, 0, $purl.'login.html');
+		is_notpresent($page, '/logout.html', 'Login Error.');
+
+		if (stripos($page, 'selected="selected">English<') === false) {
+			$this->cookie = GetCookiesArr($this->GetPage($purl.'index.php?language=EN', $this->cookie, 0, $purl), $this->cookie);
+			$page = $this->GetPage($purl, $this->cookie, 0, $purl.'index.php?language=EN');
+		}
+
+		if (stripos($page, 'Member (free)') !== false) {
+			$this->changeMesg(lang(300).'<br /><b>Account isn\\\'t premium</b><br />Using it as member.');
+			return $this->FreeDL();
+		}
+
+		if (preg_match('@>\s*Traffic\s+left:\s*</td>\s*<td>\s*(\d+(?:\.\d+)?)\s+([KMGT]?B)@i', $page, $traffic)) {
+			$traffic = array($traffic[1], strtoupper($traffic[2]));
+			switch ($traffic[1]) { // KbOrMbOrGbToBytes :D
+				case 'GB': $traffic[0] *= 1024;
+				case 'MB': $traffic[0] *= 1024;
+				case 'KB': $traffic[0] *= 1024;
+			}
+			$this->changeMesg(lang(300) . '<br />Acc. Traffic: ' . bytesToKbOrMbOrGb($traffic[0]));
+			if (preg_match('@\s(\d+(?:\.\d+)?)\s+([KMGT]?B)(?:ytes?)?</h1>@i', $this->page, $fs)) {
+				$fs = array($fs[1], strtoupper($fs[2]));
+				switch ($fs[1]) { // KbOrMbOrGbToBytes :D
+					case 'GB': $fs[0] *= 1024;
+					case 'MB': $fs[0] *= 1024;
+					case 'KB': $fs[0] *= 1024;
+				}
+				if ($fs[0] > $traffic[0]) html_error('Insufficient account traffic for download this file ('.bytesToKbOrMbOrGb($fs[0]).')');
+			} elseif ($traffic[0] < 2 * 1024 * 1024 * 1024) html_error('Remaining Traffic < 2GB.');
+		}
+
+		return $this->PremiumDL();
+	}
 }
+
+// [03-1-2014] Written by Th3-822.
+// [09-2-2014] Fixed PremiumDL with DD off. - Th3-822
 
 ?>

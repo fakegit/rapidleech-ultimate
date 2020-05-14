@@ -1,197 +1,237 @@
 <?php
-
-if (!defined('RAPIDLEECH'))
-{
-    require_once("index.html");
-    exit;
+if (!defined('RAPIDLEECH')) {
+	require_once('index.html');
+	exit();
 }
 
-if (($_GET ["premium_acc"] == "on"  && $_GET ["premium_pass"]) || ($_GET ["premium_acc"] == "on" && $premium_acc ["letitbit"] ["pass"])) {
+class letitbit_net extends DownloadClass {
+	private $page, $cookie;
+	public $link;
+	public function Download($link) {
+		global $premium_acc;
+		$this->cookie = array('lang' => 'en');
+		// Check link
+		if (empty($_REQUEST['step']) || $_REQUEST['step'] != '1') {
+			$this->page = $this->GetPage($link, $this->cookie);
+			$headers = substr($this->page, 0, strpos($this->page, "\r\n\r\n"));
+			$this->cookie = GetCookiesArr($this->page, $this->cookie);
+			if (preg_match('@\nLocation: ((https?://(?:[a-zA-Z\d\-]+\.)*letitbit\.net)?/[^\r\n]+)@i', $headers, $redir)) {
+				$link = (empty($redir[2])) ? 'http://letitbit.net'.$redir[1] : $redir[1];
+				$this->page = $this->GetPage($link, $this->cookie);
+				$this->cookie = GetCookiesArr($this->page, $this->cookie);
+			} elseif (preg_match('@\nLocation: https?://[^/\r\n]+/[^\r\n]+@i', $headers)) html_error('Error: Non Acceptable Redirect.');
+			if (stripos($this->page, 'File not found') !== false) {
+				if ($this->cookie['country'] == 'US') html_error('The requested file was not found or isn\'t downloadable in your server\'s country.'); // It seems that lib blocks downloads from usa... I will check this later and add the error msg if it's true. - T8
+				html_error('The requested file was not found.');
+			}
+		}
+		$this->link = $link;
+		if ($_REQUEST ['premium_acc'] == 'on' && (($_REQUEST['premium_user'] && $_REQUEST ['premium_pass']) || (!empty($premium_acc ['letitbit_net'] ['user']) && !empty($premium_acc ['letitbit_net'] ['pass'])))) {
+			$user = $_REQUEST ["premium_user"] ? $_REQUEST ["premium_user"] : $premium_acc ["letitbit_net"] ["user"];
+			$pass = $_REQUEST ["premium_pass"] ? $_REQUEST ["premium_pass"] : $premium_acc ["letitbit_net"] ["pass"];
+			if (empty($user) || empty($pass)) html_error("Login Failed: Username or Password is empty. Please check login data.");
+			return $this->SkipLoginC($user, $pass);
+		} elseif ($_REQUEST['premium_acc'] == 'on' && (($_REQUEST['premium_pass'])||(!empty($premium_acc['letitbit_net']['pass'])))) {
+			$key = ($_REQUEST ["premium_pass"] ? trim($_REQUEST ["premium_pass"]) : $premium_acc["letitbit_net"]["pass"]);
+			return $this->Premium($key);
+		} elseif (!empty($_REQUEST['step']) && $_REQUEST['step'] == '1') {
+			return $this->Free();
+		} else {
+			return $this->Retrieve();
+		}
+	}
 
- $page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $LINK, 0, 0, 0, $_GET["proxy"],$pauth);
-    is_page($page);
-    is_present($page, "The requested file was not found");
-    is_present($page, "Gesuchte Datei wurde nicht gefunden", "The requested file was not found");
-    is_present($page, "Запрашиваемый файл не найден", "The requested file was not found");
+	private function Retrieve() {
+		if (!preg_match("@<form (?:[^<>]*)[\s\t]*id=\"ifree_form\"(?:[^<>]*)>@i", $this->page, $form_tag)) html_error('Error: Free Form 1 Tag Not Found!');
+		$form_action = trim(cut_str($form_tag[0], 'action="', '"'));
+		if (!preg_match("@<form (?:[^<>]*)[\s\t]*id=\"enter_premium_form\"(?:[^<>]*)>@i", $this->page, $form_tag)) html_error('Error: Free Form 1 Tag Not Found!');
+		$form = trim(cut_str($this->page, $form_tag[0], '</form>'));
+		if (empty($form)) html_error('Error: Empty Free Form 1!');
+		$post = $this->AutomatePost($form);
+		if (stripos($form_action, 'born_iframe') !== false) {
+			$page = $this->GetPage("http://letitbit.net$form_action", $this->cookie, $post);
+			if (!preg_match("@<form (?:[^<>]*)[\s\t]*id=\"d3_form\"(?:[^<>]*)>@i", $page, $form_tag)) html_error('Error: Free Form 2 Tag Not Found!');
+			$form = trim(cut_str($page, $form_tag[0], '</form>'));
+			if (empty($form)) html_error('Error: Empty Free Form 2!');
+			$post = $this->AutomatePost($form);
+			$form_action = trim(cut_str($form_tag[0], 'action="', '"'));
+		}
+		$this->link = "http://letitbit.net$form_action";
+		$page = $this->GetPage($this->link, $this->cookie, $post);
+		$this->cookie = GetCookiesArr($page, $this->cookie);
+		unset($post, $form_tag, $form_action);
+		if (!preg_match("/ajax_check_url = '((http:\/\/[a-z0-9]+\.[\w.]+)\/[^\r\n']+)';/", $page, $check)) html_error("Error: Redirect link [Free] not found!");
+		$this->link = $check[1];
+		$this->server = $check[2];
+		// If you want, you can skip the countdown...
+		if (preg_match('@(\d+)<\/span> seconds@', $page, $wait)) $this->CountDown($wait[1]);
+		// end countdown timer...
+		$this->GetPage($this->link, $this->cookie, array(), 0, 0, 1); //empty array in post variable needed...
 
-    $cookie=biscottiDiKaox($page);
-    $PreForm = cut_str ( $page ,'password here:' ,'</form>' );
+		if (!preg_match('@https?://(?:[^/]+\.)?(?:(?:google\.com/recaptcha/api)|(?:recaptcha\.net))/(?:(?:challenge)|(?:noscript))\?k=([\w|\-]+)@i', $page, $pid)) html_error('reCAPTCHA not found.');
+		if (!preg_match('@var[\s\t]+recaptcha_control_field[\s\t]*=[\s\t]*\'([^\'\;]+)\'@i', $page, $ctrl)) html_error('Captcha control field not found.');
 
-    $uid5 = cut_str($PreForm,'uid5" value="','"');
-    $uid = cut_str($PreForm,'uid" value="','"');
-    $name = cut_str($PreForm,'name="name" value="','"');
-    $pin = cut_str($PreForm,'pin" value="','"');
-    $realuid = cut_str($PreForm,'realuid" value="','"');
-    $realname = cut_str($PreForm,'realname" value="','"');
-    $host = cut_str($PreForm,'host" value="','"');
-    $ssserver = cut_str($PreForm,'ssserver" value="','"');
-    $sssize = cut_str($PreForm,'sssize" value="','"');
+		$data = $this->DefaultParamArr($this->server . "/ajax/check_recaptcha.php", $this->cookie);
+		$data['step'] = '1';
+		$data['recaptcha_control_field'] = rawurlencode($ctrl[1]);
+		$this->reCAPTCHA($pid[1], $data);
+	}
 
-    $UrlAct="http://letitbit.net/sms/check2.php";
-    $post['pass']=$_GET ["premium_pass"] ? $_GET ["premium_pass"] : $premium_acc ["letitbit"] ["pass"];
-    $post['uid5']=$uid5;
-    $post['uid']=$uid;
-    $post['name']=$name;
-    $post['pin']=$pin;
-    $post['realuid']=$realuid;
-    $post['realname']=$realname;
-    $post['host']=$host;
-    $post['ssserver']=$ssserver;
-    $post['sssize']=$sssize;
-    $post['optiondir']='';
-    $Url=parse_url($UrlAct);
+	private function Free() {
+		if (empty($_POST['recaptcha_response_field'])) html_error('You didn\'t enter the image verification code.');
+		$post = array();
+		$post['recaptcha_challenge_field'] = $_POST['recaptcha_challenge_field'];
+		$post['recaptcha_response_field'] = $_POST['recaptcha_response_field'];
+		$post['recaptcha_control_field'] = rawurlencode(rawurldecode($_POST['recaptcha_control_field']));
 
-$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $Referer, $cookie, $post, 0, $_GET["proxy"],$pauth);
-    is_page($page);
-    $dlink=slice($page,"Download Master","</table>",3);
-    $dwnl=slice($dlink,"<a href='","'",1);
-    $Url = parse_url($dwnl);
-    $FileName = basename($dwnl);
-insert_location("index.php?filename=".urlencode($FileName)."&force_name=".urlencode($FileName)."&host=".$Url["host"]."&port=".$Url["port"]."&path=".urlencode($Url["path"].($Url["query"] ? "?".$Url["query"] : ""))."&referer=".urlencode($Referer)."&cookie=".urlencode($cookie)."&email=".($_GET["domail"] ? $_GET["email"] : "")."&partSize=".($_GET["split"] ? $_GET["partSize"] : "")."&method=".$_GET["method"]."&proxy=".($_GET["useproxy"] ? $_GET["proxy"] : "")."&saveto=".$_GET["path"]."&link=".urlencode($LINK).($_GET["add_comment"] == "on" ? "&comment=".urlencode($_GET["comment"]) : "").($pauth ? "&pauth=$pauth" : "").(isset($_GET["audl"]) ? "&audl=doum" : ""));
+		$this->cookie = urldecode($_POST['cookie']);
+		$page = $this->GetPage($this->link, $this->cookie, $post, 0, 0, 1); //too many XML request needed so I used default http.php function in geturl...
+		is_present($page, 'error_wrong_captcha', 'Error: Wrong Captcha Entered.');
+		is_present($page, 'error_free_download_blocked', 'Error: FreeDL limit reached.');
+		if (!preg_match_all('/"(https?:[^\|\r\n\"\']+)"?/', $page, $dl)) html_error('Error: Download link [Free] not found.');
+		$dlink = str_replace('\\', '', trim($dl[1][array_rand($dl[1])]));
+		$FileName = urldecode(basename(parse_url($dlink, PHP_URL_PATH)));
+		$this->RedirectDownload($dlink, $FileName, $this->cookie, 0);
+		exit();
+	}
 
+	private function Premium($premiumkey = false) {
+		if ($premiumkey) {
+			$form = cut_str($this->page, '<div class="hide-block password_area">', '<div class="column label" style="width:200px">');
+			if (empty($form)) html_error("Error: Empty Premium Key Form!");
+			$post = $this->AutomatePost($form);
+			$post['pass'] = $premiumkey;
+			$post['submit_sms_ways_have_pass'] = 'Download file';
+			$this->link = "http://letitbit.net" . cut_str($form, '<form action="', '"');
+			$this->page = $this->GetPage($this->link, $this->cookie, $post);
+		} else $this->page = $this->GetPage($this->link, $this->cookie, 0, $this->link);
+		$this->cookie = GetCookiesArr($this->page, $this->cookie);
 
-}else{
-if ($_POST['step'] == 1) {
+		$x = 0;
+		$ref = $this->link;
+		while ($x < 5 && preg_match('@\nLocation: ((https?://(?:[a-zA-Z\d\-]+\.)*letitbit\.net)?/[^\r\n]*)@i', $this->page, $redir)) {
+			$redir = (empty($redir[2])) ? (!empty($ref['scheme']) && strtolower($ref['scheme']) == 'https' ? 'https' : 'http').'://'.parse_url($ref, PHP_URL_HOST).$redir[1] : $redir[1];
+			$this->page = $this->GetPage($redir, $this->cookie, 0, $ref);
+			$ref = $redir;
+			$this->cookie = GetCookiesArr($this->page, $this->cookie);
+			$x++;
+		}
 
-    $UrlAct="http://letitbit.net/download3.php";
-    $post = unserialize(urldecode($_POST["post"]));
-	$post['uid2']=$post['uid'];
-    $post['cap']=$_POST["captcha"];
-    $cookie = urldecode($_POST['cookie']);
-    $Url = parse_url($UrlAct);
-    $Referer = "http://letitbit.net/download4.php";
+		is_present($this->page, 'The premium key has been banned for sharing with other people.');
+		is_present($this->page, 'This premium key is attached to a registered account', 'You need to use your username and password not the premium key!');
+		is_present($this->page, 'callback_no_pass', 'This premium key does not exist.');
+		if (!preg_match_all('@"(https?://[^/]+/[^\"]+)"\s*\:\s*"direct\_link\_\d+"@', $this->page, $dl)) html_error('Error: Download Link [Premium] not found!');
+		$dlink = trim($dl[1][array_rand($dl[1])]);
+		$FileName = urldecode(basename(parse_url($dlink, PHP_URL_PATH)));
+		$this->RedirectDownload($dlink, $FileName, $this->cookie, 0, $this->link);
+	}
 
-    $page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $Referer, $cookie, $post, 0, $_GET["proxy"],$pauth);
+	private function login($user, $pass) {
+		$post = array();
+		$post['act'] = 'login';
+		$post['login'] = $user;
+		$post['password'] = $pass;
+		$check = $this->GetPage("http://letitbit.net/ajax/auth.php", $this->cookie, $post, "http://letitbit.net/");
+		is_present($check, 'Authorization data is invalid');
+		is_present($check, 'Your login attempts have been made more than 100 times in 24 hours, the next attempt will be available only tomorrow.');
+		$this->cookie = GetCookiesArr($check, array('lang' => 'en'));
+		if (empty($this->cookie['log']) || empty($this->cookie['pas'])) html_error('Error [log/pass cookie not found!]');
 
-    is_page($page);
+		$check = $this->GetPage('http://letitbit.net/ajax/get_attached_passwords.php', $this->cookie, 0, 'http://letitbit.net/');
+		is_present($check, 'Authorization data is invalid!', 'Unknown login error.');
+		$this->SaveCookies($user, $pass); // Update cookies file
+		is_present($check, 'There are no attached premium', 'No premium codes attached');
 
-    if(preg_match('/http:\/\/\w{2}\.[^"\']+/', $page, $nextPageArray))
-    {
-        $nextPage = $nextPageArray[0];
-		$Url=parse_url($nextPage);
-		$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $UrlAct, $cookie, 0, 0, $_GET["proxy"],$pauth);
-		 $wait = cut_str ( $page ,'y = ' ,';' );
-        $act2 = cut_str ( $page ,'window.location.href="' ,'"' );
-        $Url=parse_url($act2);
-		insert_timer($wait);
-		$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $act, $cookie, 0, 0, $_GET["proxy"],$pauth);
-    }
-    else
-    {
-        html_error("Could not find frame.", 0);
-    }
-    $snap = cut_str ( $page ,'id="links' ,'</div>' );
-    $dwn= cut_str ( $snap ,'href="' ,'"' );
-    $Url = parse_url($dwn);
-    $FileName = basename($Url["path"]);
-    
-insert_location("index.php?filename=".urlencode($FileName)."&force_name=".urlencode($FileName)."&host=".$Url["host"]."&port=".$Url["port"]."&path=".urlencode($Url["path"].($Url["query"] ? "?".$Url["query"] : ""))."&referer=".urlencode($Referer)."&cookie=".urlencode($cookie)."&email=".($_GET["domail"] ? $_GET["email"] : "")."&partSize=".($_GET["split"] ? $_GET["partSize"] : "")."&method=".$_GET["method"]."&proxy=".($_GET["useproxy"] ? $_GET["proxy"] : "")."&saveto=".$_GET["path"]."&link=".urlencode($LINK).($_GET["add_comment"] == "on" ? "&comment=".urlencode($_GET["comment"]) : "").($pauth ? "&pauth=$pauth" : "").(isset($_GET["audl"]) ? "&audl=doum" : ""));
+		return $this->Premium();
+	}
 
-} else {
-    $page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), 0, 0, 0, 0, $_GET["proxy"],$pauth);
-    is_page($page);
+	private function IWillNameItLater($cookie, $decrypt=true) {
+		if (!is_array($cookie)) {
+			if (!empty($cookie)) return $decrypt ? decrypt(urldecode($cookie)) : urlencode(encrypt($cookie));
+			return '';
+		}
+		if (count($cookie) < 1) return $cookie;
+		$keys = array_keys($cookie);
+		$values = array_values($cookie);
+		$keys = $decrypt ? array_map('decrypt', array_map('urldecode', $keys)) : array_map('urlencode', array_map('encrypt', $keys));
+		$values = $decrypt ? array_map('decrypt', array_map('urldecode', $values)) : array_map('urlencode', array_map('encrypt', $values));
+		return array_combine($keys, $values);
+	}
 
-    $page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $LINK, 0, 0, 0, $_GET["proxy"],$pauth);
-    is_page($page);
-    is_present($page, "The requested file was not found");
-    is_present($page, "Gesuchte Datei wurde nicht gefunden", "The requested file was not found");
-    is_present($page, "Запрашиваемый файл не найден", "The requested file was not found");
+	private function SkipLoginC($user, $pass, $filename = 'letitbit_dl.php') {
+		global $secretkey;
+		$filename = DOWNLOAD_DIR . basename($filename);
+		if (!file_exists($filename)) return $this->login($user, $pass);
 
-    $cookie=biscottiDiKaox($page);
-    $FreeForm = cut_str ( $page ,'id="dvifree">' ,'</form>' );
+		$file = file($filename);
+		$savedcookies = unserialize($file[1]);
+		unset($file);
 
-	$act = "http://".cut_str ( $page ,'form action="http://' ,'"' );
-    $uid = slice($FreeForm,'name="uid" value="','"',2);
-    $md5crypt = cut_str($FreeForm,'="md5crypt" value="','"');
-   // $uid2 = cut_str($FreeForm,'name="uid2" value="','"');
-    $uid5 = cut_str($FreeForm,'name="uid5" value="','"');
-    $name = cut_str($FreeForm,'name="name" value="','"');
-    $pin = cut_str($FreeForm,' name="pin" value="','"');
-    $realuid = cut_str($FreeForm,'e="realuid" value="','"');
-    $realname = cut_str($FreeForm,'="realname" value="','"');
-    $host = cut_str($FreeForm,'name="host" value="','"');
-    $ssserver = cut_str($FreeForm,'="ssserver" value="','"');
-    $sssize = cut_str($FreeForm,'me="sssize" value="','"');
+		$hash = hash('crc32b', $user . ':' . $pass);
+		if (array_key_exists($hash, $savedcookies)) {
+			$_secretkey = $secretkey;
+			$secretkey = sha1($user . ':' . $pass);
+			$this->cookie = (decrypt(urldecode($savedcookies[$hash]['enc'])) == 'OK') ? $this->IWillNameItLater($savedcookies[$hash]['cookie']) : '';
+			$secretkey = $_secretkey;
+			if (is_array($this->cookie)) unset($this->cookie['PHPSESSID']);
+			if ((is_array($this->cookie) && count($this->cookie) < 1) || empty($this->cookie)) return $this->login($user, $pass);
 
+			$check = $this->GetPage('http://letitbit.net/ajax/get_attached_passwords.php', $this->cookie, 0, 'http://letitbit.net/');
+			if (stripos($check, 'Authorization data is invalid!') !== false) return $this->login($user, $pass);
+			$this->SaveCookies($user, $pass); // Update cookies file
+			is_present($check, 'There are no attached premium', 'No premium codes attached');
 
-    $post['uid']=$uid;
-    $post['md5crypt']=$md5crypt;
-    $post['frameset']='Download file';
-  //  $post['uid2']=$uid2;
-    $post['uid5']=$uid5;
- //   $post['uid']=$uid2;
-    $post['name']=$name;
-    $post['pin']=$pin;
-    $post['realuid']=$realuid;
-    $post['realname']=$realname;
-    $post['host']=$host;
-    $post['ssserver']=$ssserver;
-    $post['sssize']=$sssize;
-    $post['optiondir']='';
-    $post['fix']='1';
+			return $this->Premium();
+		}
+		return $this->login($user, $pass);
+	}
 
-	$Url=parse_url($act);
- $page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $LINK, $cookie, $post, 0, $_GET["proxy"],$pauth);
-	$cookie.= " ".GetCookies($page);
-	
-if (stristr($page,"cap.php?"))
-    {
-    $imagecode = cut_str($page,"<img src='http://letitbit.net/cap.php?jpg=","'");
-    $img = 'http://letitbit.net/cap.php?jpg='.$imagecode;
-    $Url = parse_url($img);
-    $page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $LINK, $cookie, 0, 0, $_GET["proxy"],$pauth);
+	private function SaveCookies($user, $pass, $filename = 'letitbit_dl.php') {
+		global $secretkey;
+		$maxdays = 7; // Max days to keep cookies saved
+		$filename = DOWNLOAD_DIR . basename($filename);
+		if (file_exists($filename)) {
+			$file = file($filename);
+			$savedcookies = unserialize($file[1]);
+			unset($file);
 
-    $headerend = strpos($page,"\r\n\r\n");
-    $pass_img = substr($page,$headerend+9);
-    write_file($options['download_dir']."letitbit_captcha.jpg", $pass_img);
+			// Remove old cookies
+			foreach ($savedcookies as $k => $v) if (time() - $v['time'] >= ($maxdays * 24 * 60 * 60)) unset($savedcookies[$k]);
+		} else $savedcookies = array();
+		$hash = hash('crc32b', $user . ':' . $pass);
+		$_secretkey = $secretkey;
+		$secretkey = sha1($user . ':' . $pass);
+		$savedcookies[$hash] = array('time' => time(), 'enc' => urlencode(encrypt('OK')), 'cookie' => $this->IWillNameItLater($this->cookie, false));
+		$secretkey = $_secretkey;
 
-    $code = '<form method="post" action="'.$PHP_SELF.(isset($_GET["audl"]) ? "?audl=doum" : "").'">'.$nn;
-    $code .= '<input type="hidden" name="link" value="'.urlencode($LINK).'">'.$nn;
-    $code .= '<input type="hidden" name="post" value="'.urlencode(serialize($post)).'">'.$nn;
-    $code .= '<input type="hidden" name="step" value="1">'.$nn;
-    $code .= '<input type="hidden" name="cookie" value="'.urlencode($cookie).'">'.$nn;
-    $code .= 'Please enter : <img src="'.$options['download_dir'].'letitbit_captcha.jpg?'.rand(1,10000).'"><br><br>'.$nn;
-    $code .= '<input type="text" name="captcha"> <input type="submit" value="Download">'.$nn;
-    $code .= '</form>';
-    echo $code;
+		write_file($filename, "<?php exit(); ?>\r\n" . serialize($savedcookies));
+	}
 
-    }
-  else
-    {
-    html_error("Image code not found", 0);
-    }
+	private function AutomatePost($form) {
+		if (!preg_match_all('@<input type="hidden" name="([^"]+)" value="([^"]+)" \/>@i', $form, $match)) html_error("Error: Post Data not found!");
+		$post = array();
+		$match = array_combine($match[1], $match[2]);
+		foreach ($match as $k => $v) $post[$k] = ($v == "") ? 1 : $v;
+		return $post;
+	}
 
 }
-}
-function biscottiDiKaox($content)
- {
-     preg_match_all("/Set-Cookie: (.*)\n/",$content,$matches);
-     foreach ($matches[1] as $coll) {
-     $bis0=split(";",$coll);
-     $bis1=$bis0[0]."; ";
-     $bis2=split("=",$bis1);
-     $cek=" ".$bis2[0]."="; 
-     if(strpos($bis1,"=deleted") || strpos($bis1,$cek.";")) {
-     }else{
-    if  (substr_count($bis,$cek)>0)
-    {$patrn=" ".$bis2[0]."=[^ ]+";
-    $bis=preg_replace("/$patrn/"," ".$bis1,$bis);     
-    } else {$bis.=$bis1;}}}  
-    $bis=str_replace("  "," ",$bis);     
-    return rtrim($bis);
- }
- // tweaked cutstr with pluresearch functionality
-function slice($str, $left, $right,$cont=1)
-    {
-    for($iii=1;$iii<=$cont;$iii++){
-    $str = substr ( stristr ( $str, $left ), strlen ( $left ) );
-    }
-    $leftLen = strlen ( stristr ( $str, $right ) );
-    $leftLen = $leftLen ? - ($leftLen) : strlen ( $str );
-    $str = substr ( $str, 0, $leftLen );
-    return $str;
-}
-/*************************\
- WRITTEN BY KAOX 05-dec-09
-\*************************/
+
+/***********************************************************************************************\
+  WRITTEN BY VinhNhaTrang 15-11-2010
+  Fix the premium code by code by vdhdevil
+  Fix the free download code by vdhdevil & Ruud v.Tony 25-3-2011
+  Updated the premium code by Ruud v.Tony 19-5-2011
+  Updated for site layout change by Ruud v.Tony 24-7-2011
+  Updated for joining between premium user & pass with only single key by Ruud v.Tony 13-10-2011
+  Small fix in post form by Ruud v.Tony 16-12-2011 (sorry for the delay, I'm busy with my real life)
+  Fix free code by Ruud v.Tony & Th3-822 for letitbit new layout 31-12-2011 (Happy new year everyone)
+  Fix new login policy & free download code from letitbit by Ruud v.Tony & Th3-822 18-02-2012
+  Fixed free download code by Ruud v.Tony 16-04-2012
+  Fixed for redirects in download links by Th3-822 16-10-2012
+  reCaptcha support added at freedl by Th3-822 24-11-2012
+  Fixed free dl for extra form on some locations. - Th3-822
+  FreeDl & PremiumKeyDl fixed. - Th3-822 | [19-4-2013]
+\***********************************************************************************************/
+
 ?>
