@@ -1,157 +1,102 @@
 <?php
+if (!defined('RAPIDLEECH')) {
+	require_once("index.html");
+	exit;
+}
 
-if (!defined('RAPIDLEECH'))
-  {
-  require_once("index.html");
-  exit;
-  }
+class sendspace_com extends DownloadClass {
+	private $page, $cookie;
+	public function Download($link) {
+		global $premium_acc;
+		$this->link = str_ireplace(array('https://', '://sendspace.com'), array('http://', '://www.sendspace.com'), $link);
+		$this->pA = (empty($_GET['premium_user']) || empty($_GET['premium_pass']) ? false : true);
+		if ($_GET['premium_acc'] == 'on' && ($this->pA || (!empty($premium_acc['sendspace_com']['user']) && !empty($premium_acc['sendspace_com']['pass'])))) $this->Login();
+		else $this->Free();
+	}
 
-if (($_GET["premium_acc"] == "on" && $_GET["premium_user"] && $_GET["premium_pass"]) || ($_GET["premium_acc"] == "on" && $premium_acc["sendspace"]["user"] && $premium_acc["sendspace"]["pass"]))
-{
-	function biscotti($content)
-	{
-		is_page($content);
-		preg_match_all("/Set-Cookie: (.*)\n/",$content,$matches);
-		foreach ($matches[0] as $coll)
-		{
-			$bis.=cut_str($coll,"Set-Cookie: ","; ")."; ";
+	private function Free() {
+		$this->page = $this->GetPage($this->link);
+		$this->cookie = GetCookiesArr($this->page);
+
+		if (preg_match('@\nLocation: ((https?://www\.sendspace\.com)?/[^\r\n\"\'\t<>]+)@i', $this->page, $check)) {
+			$check[1] = (empty($check[2])) ? 'http://www.sendspace.com'.$check[1] : $check[1];
+			$this->page = $this->GetPage($check[1], $this->cookie);
+			$this->cookie = GetCookiesArr($this->page, $this->cookie);
 		}
-	return $bis;
+		$this->chkCaptcha();
+
+		is_present($this->page, 'Sorry, the file you requested is not available.');
+
+		if (!preg_match('@https?://(?:[a-zA-Z\d\-]+\.)*sendspace\.com/dl/[^\r\n\"\'\t<>]+@i', $this->page, $dl)) html_error('Download Link Not Found.');
+
+		$this->RedirectDownload($dl[0], basename(parse_url($dl[0], PHP_URL_PATH)), $this->cookie);
 	}
 
-	$page = geturl("sendspace.com", 80, "/", "", 0, 0, 0, "");
-	$cook=biscotti($page);
-	$post["action"] = "login";
-	$post["username"] = $_GET["premium_user"] ? trim($_GET["premium_user"]) : $premium_acc["sendspace"]["user"];
-	$post["password"] = $_GET["premium_pass"] ? trim($_GET["premium_pass"]) : $premium_acc["sendspace"]["pass"];
-	$post["remember"] = '1';
-	$post["submit"] = "login";
-	$post["openid_url"] = "";
-	$post["action_type"] = "login";
-	$page=geturl("sendspace.com", 80, "/login.html", "http://sendspace.com/login.html", $cook, $post, 0, $_GET["proxy"]);
-	$cook=$cook." ".biscotti($page);
-	is_present($cook,"ssal=deleted","Login incorrect retype your username or password correctly");
-	$Url = parse_url($LINK);
-	$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"], 0, $cook, 0, 0, $_GET["proxy"], $pauth);
-	preg_match('%(http://fs.+\.sendspace\.com/dlp/[a-f0-9]{32}/.{8}/.{6}/.{6}/[^/]+\..{3})"\s%', $page, $dlink);
-	$Url = parse_url($dlink[1]);
-	$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"], 0, $cook, 0, 0, $_GET["proxy"], $pauth);
-	preg_match('%ocation: (.+)\r\n%', $page, $flink);
-	$Href = 'http://' . $Url['host'] . $flink[1];
-	$Url = parse_url($Href);
-	$FileName = basename($Url['path']);
-	insert_location("$PHP_SELF?filename=".urlencode($FileName)."&host=".$Url["host"]."&path=".urlencode($Url["path"].($Url["query"] ? "?".$Url["query"] : ""))."&referer=".urlencode($LINK)."&cookie=".urlencode($cook)."&email=".($_GET["domail"] ? $_GET["email"] : "")."&partSize=".($_GET["split"] ? $_GET["partSize"] : "")."&method=".$_GET["method"]."&proxy=".($_GET["useproxy"] ? $_GET["proxy"] : "")."&saveto=".$_GET["path"]."&link=".$LINK.($_GET["add_comment"] == "on" ? "&comment=".urlencode($_GET["comment"]) : "").($pauth ? "&pauth=$pauth" : "").(isset($_GET["audl"]) ? "&audl=doum" : ""));
-}
-else
-//Use FREE instead?
-{
-	function sendspace_enc($par1,$par2,$text)
-  {
-  $myarr = array();
+	private function Premium() {
+		$this->page = $this->GetPage($this->link, $this->cookie);
+		if (preg_match('@\nLocation: ((https?://www\.sendspace\.com)?/[^\r\n\"\'\t<>]+)@i', $this->page, $check)) {
+			$check[1] = (empty($check[2])) ? 'http://www.sendspace.com'.$check[1] : $check[1];
+			$this->page = $this->GetPage($check[1], $this->cookie);
+			$this->cookie = GetCookiesArr($this->page, $this->cookie);
+		}
+		$this->chkCaptcha();
+		is_present($this->page, 'Sorry, the file you requested is not available.');
 
-  for ($i = 0; $i < $par1; $i++)
-    {
-		$myarr[$i] = $i;
-    }
-	
-  for ($j = 0,$k = $j,$l = $myarr; $j < $par1; $j++)
-    {
-		$k = (ord($par2[$j%strlen($par2)])+$l[$j]+$k)%$par1;
-		$m = $l[$j];
-		$l[$j] = $l[$k];
-		$l[$k] = $m;
-		$l[$k] = $l[$k]^5;
-    }
+		if (!preg_match('@https?://(?:[a-zA-Z\d\-]+\.)*sendspace\.com/dlp/[^\r\n\"\'\t<>]+@i', $this->page, $dl)) html_error('Download-Link Not Found.');
 
-  for ($res = '', $k = 0,$n = 0;$n < strlen($text); $n++)
-    {
-		$o = $n%$par1;
-		$k = ($l[$o]+$k)%$par1;
-		$p = $l[$o];
-		$l[$o] = $l[$k];
-		$l[$k] = $p;
-		$res.= chr(ord($text[$n])^$l[($l[$o]+$l[$k])%$par1]);
-    }
-
-  return $res;
-  }
-
-function sendspace_base64ToText($t)
-  {
-	$b64s = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"';
-  $r = '';
-  $m = 0;
-  $a = 0;
-  $l = strlen($t);
-    
-  for($n = 0; $n<$l; $n++)
-    {
-    $c = strpos($b64s,$t[$n]);
-    if($c >= 0)
-      {
-      if($m)
-       	{
-       	$d = ($c << (8-$m))& 255 | $a;
-        $r.= chr($d);
-        }
-      $a = $c >> $m;
-      $m+= 2;
-      if($m == 8)
-        {
-        $m = 0;
-        }
-      }
-    }
-    
-  return $r;
-  }
-  
-  
-}
-$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"], 0, 0, 0, 0, $_GET["proxy"],$pauth);
-is_page($page);
-				
-is_present($page,"There are no free download slots available");
-is_present($page,"Sorry, the file you requested is not available");
-//$countDown=trim(cut_str($page,"var count = ",";"));
-//insert_timer($countDown, "File is being prepared.","",true);
-$cookie = GetCookies($page);
-$post["download"]="%C2%A0REGULAR+DOWNLOAD%C2%A0";
-$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $LINK, $cookie, $post, 0, $_GET["proxy"],$pauth);
-is_page($page);
-
-
-//$code_enc = cut_str($page,"utf8_decode(enc(base64ToText('","'");
-/*
-if (!$code_enc)
-	{
-	html_error('Error getting link');
+		$this->RedirectDownload($dl[0], basename(parse_url($dl[0], PHP_URL_PATH)), $this->cookie);
 	}
-	*/
-//$dec_text = $code_enc;
-				
-//$d64text = sendspace_base64ToText($dec_text);
-//$urlnew = sendspace_utf8_decode($d64text);
 
-//is_notpresent($urlnew,'href="','Error decrypting URL page');
-$snap = cut_str ( $page ,'Download Link: ' ,'</a>' );			
-$Href = cut_str($snap,'href="','" onclick');
-if (!$Href)
-	{
-	html_error('Error decrypting URL page');
+	private function Login() {
+		global $premium_acc;
+		$site = 'https://www.sendspace.com';
+		$post = array();
+		$post['action'] = 'login';
+		$post['submit'] = 'login';
+		$post['target'] = '%252F';
+		$post['action_type'] = 'login';
+		$post['remember'] = '1';
+		$post['username'] = urlencode($this->pA ? $_GET['premium_user'] : $premium_acc['sendspace_com']['user']);
+		$post['password'] = urlencode($this->pA ? $_GET['premium_pass'] : $premium_acc['sendspace_com']['pass']);
+		$post['remember'] = 'on';
+		$page = $this->GetPage("$site/login.html", 0, $post, "$site/");
+
+		is_present($page, 'check your username and password', 'Login Failed: Invalid User/Password.');
+		$this->cookie = GetCookiesArr($page);
+		if (empty($this->cookie['ssal'])) html_error('Login Error: Cannot find "ssal" cookie.');
+
+		$page = $this->GetPage("$site/mysendspace/myindex.html", $this->cookie, 0, "$site/");
+		is_present($page, '<b>Sendspace Free</b>', 'Login Failed: Account Isn\'t Premium.');
+
+		$this->Premium();
 	}
-$post=array();
-$Url = parse_url($Href);
-$page = geturl($Url["host"], $Url["port"] ? $Url["port"] : 80, $Url["path"].($Url["query"] ? "?".$Url["query"] : ""), $Referer, $cookie, $post, 0, $_GET["proxy"],$pauth);
-if(preg_match('/location: (.*)/im', $page, $loc)){
-	$Href = 'http://'.$Url["host"].$loc[1];
-}
-$Url = parse_url($Href);
-//$FileName = !$FileName ? basename($Url["path"]) : $FileName;
-$FileName = !$FileName ? basename(trim($loc[1])) : $FileName;
 
-insert_location("$PHP_SELF?filename=".urlencode($FileName)."&host=".$Url["host"]."&path=".urlencode($Url["path"].($Url["query"] ? "?".$Url["query"] : ""))."&referer=".urlencode($Referer)."&email=".($_GET["domail"] ? $_GET["email"] : "")."&partSize=".($_GET["split"] ? $_GET["partSize"] : "")."&method=".$_GET["method"]."&proxy=".($_GET["useproxy"] ? $_GET["proxy"] : "")."&saveto=".$_GET["path"]."&link=".urlencode($LINK).($_GET["add_comment"] == "on" ? "&comment=".urlencode($_GET["comment"]) : "")."&auth=".$auth.($pauth ? "&pauth=$pauth" : "").(isset($_GET["audl"]) ? "&audl=doum" : ""));
+	private function chkCaptcha() {
+		if (stripos($this->page, 'Please complete the form below:') === false) return;
+		if (!empty($_POST['step']) && $_POST['step'] == '1') {
+			if (empty($_POST['recaptcha_response_field'])) html_error('You didn\'t enter the image verification code.');
+			$this->cookie = StrToCookies(decrypt(urldecode($_POST['cookie'])));
+			$post = array('recaptcha_challenge_field' => $_POST['recaptcha_challenge_field'], 'recaptcha_response_field' => $_POST['recaptcha_response_field']);
+			$this->page = $this->GetPage($this->link, $this->cookie, $post);
+			if (stripos($this->page, 'You entered an invalid captcha') !== false) {
+				echo "\n<span class='htmlerror'><b>You entered an invalid captcha, please try again.</b></span><br />";
+				unset($_POST['step']);
+				$this->chkCaptcha();
+			}
+		} else {
+			if (!preg_match('@https?://(?:[a-zA-Z\d\-]+\.)*(?:google\.com/recaptcha/api|recaptcha\.net)/(?:challenge|noscript)\?k=([\w\.\-]+)@i', $this->page, $cpid)) html_error('reCaptcha Not Found.');
+			$data = $this->DefaultParamArr($this->link, encrypt(CookiesToStr($this->cookie)));
+			$data['step'] = '1';
+			$this->reCAPTCHA($cpid[1], $data);
+			exit;
+		}
+	}
+}
 
 // Use PREMIUM? [szalinski 09-May-09]
 // fix free download by kaox 19-dec-2009
+// Fix premium & free by Ruud v.Tony 03-Okt-2011
+// [16-6-2013] Rewritten & Added captcha support. - Th3-822
+// [09-1-2016] Fixed premium acc check. - Th3-822
+
 ?>
