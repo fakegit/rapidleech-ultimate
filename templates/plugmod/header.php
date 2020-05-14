@@ -11,10 +11,11 @@
 <link title="Rapidleech Style" href="templates/plugmod/styles/rl_style_pm.css" rel="stylesheet" type="text/css" />
 
 <title><?php
+if (!isset($nn)) $nn = "\r\n";
 if (!isset($page_title)) {
-	echo 'Rapidleech v2 rev. '.$rev_num;
+	echo 'Rapidleech v2 rev. '.$GLOBALS['rev_num'];
 } else {
-	echo htmlentities($page_title);
+	echo htmlspecialchars($page_title);
 }
 ?></title>
 <script type="text/javascript">
@@ -28,11 +29,11 @@ pic1.src="templates/plugmod/images/ajax-loading.gif";
 </script>
 <script type="text/javascript" src="classes/js.js"></script>
 <?php
-if ($options['ajax_refresh']) { echo '<script type="text/javascript" src="classes/ajax_refresh.js"></script>'.$nn; }
-if ($options['flist_sort']) { echo '<script type="text/javascript" src="classes/sorttable.js"></script>'.$nn; }
+if ($GLOBALS['options']['ajax_refresh']) { echo '<script type="text/javascript" src="classes/ajax_refresh.js"></script>'.$nn; }
+if ($GLOBALS['options']['flist_sort']) { echo '<script type="text/javascript" src="classes/sorttable.js"></script>'.$nn; }
 ?>
-<link rel="icon" href="templates/plugmod/images/favicon.png" >
+
 </head>
 
 <body>
-<center><a href="./"><img src="templates/plugmod/images/logo_pm.gif" alt="RapidLeech PlugMod" border="0" /></a></center><br />
+<center><img src="templates/plugmod/images/logo_pm.gif" alt="RapidLeech PlugMod" border="0" /></center><br />
