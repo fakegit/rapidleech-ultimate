@@ -1,44 +1,31 @@
 <?php
-if (!defined('RAPIDLEECH')) { require_once("index.html"); exit; }
+if (!defined('RAPIDLEECH')) { require_once('ndex.html'); exit; }
 
+$sites = array();
 ### Here is a list of checkable links ###
 // Only update here if needed so we can synchronize it with templates
-$sites = array(
-	array('name' => 'FileSonic.com', 'link' => '^http://(www\.)?filesonic\.[^/]+/file/[a-z]?[0-9]+', 'regex' => 'File size:'),
-	array('name' => 'Rapidshare.com', 'link' => 'rapidshare\.com/files/', 'regex' => '(FILE DOWNLOAD|This file is larger than 200 Megabyte)'),
-	array('name' => 'Megashares.com', 'link' => 'megashares\.com/\?d01=', 'regex' => 'Click here to download'),
-	array('name' => 'Megaupload.com', 'link' => 'megaupload\.com/([a-z]{2}/)?\?d=', 'regex' => '(Filename:)|(All download slots assigned to your country)'),
-	array('name' => 'Filefactory.com', 'link' => 'filefactory\.com/file/', 'regex' => '(download link)|(Please try again later)'),
-	array('name' => 'Rapidshare.de', 'link' => 'rapidshare\.de/files/', 'regex' => 'You want to download'),
-	array('name' => 'Mediafire.com', 'link' => 'mediafire\.com/(download\.php)?\?', 'regex' => 'You requested'),
-	array('name' => 'Netload.in', 'link' => 'netload\.in/datei[0-9a-z]{32}/', 'regex' => 'download_load'),
-	array('name' => 'Depositfiles.com', 'link' => 'depositfiles\.com/([a-z]{2}/)?files/', 'regex' => 'File Name', 'pattern' => '@(com\/files\/)|(com\/[a-z]{2}\/files\/)@i', 'replace' => '"com/en/files/'),
-	array('name' => 'Sendspace.com', 'link' => 'sendspace\.com/file/', 'regex' => 'The download link is located below.'),
-	array('name' => 'iFile.it', 'link' => 'ifile\.it/', 'Request Ticket'),
-	array('name' => 'USAUpload.net', 'link' => 'usaupload\.net/d/', 'regex' => 'This is the download page for file'),
-	array('name' => 'Badango.com', 'link' => 'badongo\.com/([a-z]{2}/)?(file)|(vid)/', 'regex' => 'fileBoxMenu'),
-	array('name' => 'Uploading.com', 'link' => 'uploading\.com/files/', 'regex' => 'Download file'),
-	array('name' => 'Savefile.com', 'link' => 'savefile\.com/files/', 'regex' => 'link to this file'),
-	array('name' => 'Cocoshare.cc', 'link' => 'cocoshare\.cc/[0-9]+/', 'regex' => 'Filesize:'),
-	array('name' => 'Axifile.com', 'link' => 'axifile\.com/?', 'regex' => 'You have request', 'pattern' => '@com\?@i', 'com/?'),
-	array('name' => 'Turboupload.com', 'link' => '(d\.turboupload\.com/)|(turboupload.com/download/)', 'regex' => '(Please wait while we prepare your file.)|(You have requested the file)'),
-	array('name' => 'Files.to', 'link' => 'files\.to/get/', 'regex' => 'You requested the following file'),
-	array('name' => 'Gigasize.com', 'link' => 'gigasize\.com/get\.php\?d=', 'regex' => 'Downloaded'),
-	array('name' => 'Ziddu.com', 'link' => 'ziddu\.com/', 'regex' => 'Download Link'),
-	array('name' => 'ZShare.net', 'link' => 'zshare\.net/(download|audio|video)/', 'regex' => 'Last Download'),
-	array('name' => 'Uploaded.to', 'link' => 'uploaded\.to/(\?id=|file/)', 'regex' => 'Filename:'),
-	array('name' => 'Filefront.com', 'link' => 'filefront\.com/', 'regex' => 'http://static4.filefront.com/ffv6/graphics/b_download_still.gif'),
-	array('name' => 'UploadPalace.com', 'link' => 'uploadpalace\.com/[a-zA-Z]{2}/file/[0-9]+/', 'regex' => 'Filename:'),
-	array('name' => 'SpeedyShare.com', 'link' => 'speedyshare\.com/[0-9]+\.html', '/data/'),
-	array('name' => 'Momupload.com', 'link' => 'momupload\.com/files/', 'regex' => 'You want to download the file'),
-	array('name' => 'Rnbload.com', 'link' => 'rnbload\.com/file/', 'regex' => 'Filename:'),
-	array('name' => 'iFolder.ru', 'link' => 'ifolder\.ru/[0-9]+', 'regex' => 'ints_code'),
-	array('name' => 'ADrive.com', 'link' => 'adrive\.com/public/', 'regex' => 'view'),
-	array('name' => 'Easy-share.com', 'link' => 'easy-share\.com', 'regex' => 'file url:'),
-	array('name' => 'BitRoad.net', 'link' => 'bitroad\.net/download/[0-9a-z]+/', 'regex' => 'File:'),
-	array('name' => 'Megarotic.com', 'link' => 'megarotic\.com/([a-z]{2}/)?\?d=', 'regex' => '(Filename:)|(All download slots assigned to your country'),
-	array('name' => 'Egoshare.com', 'link' => 'egoshare\.com', 'regex' => 'You have requested'),
-	array('name' => 'Flyupload.com', 'link' => 'flyupload\.flyupload.com/get\?fid', 'regex' => 'Download Now'),
-	array('name' => 'Megashare.com', 'link' => 'megashare\.com/[0-9]+', 'regex' => 'Free'),
-);
+
+$sites['Rapidshare.com'] = array(); // RS is checked in ajax.php (But we need this for show the name in linkchecker)
+$sites['Share-Online.biz'] = array(); // This too ^^
+$sites['Mediafire.com'] = array();
+$sites['Filefactory.com'] = array('link' => '^http://(www\.)?filefactory\.com/file/\w+/?', 'regex' => '(download link)|(temporarily limited)', 'szregex' => "([\d|\.]+)\s+(\w{1,5}) file uploaded");
+$sites['Hotfile.com'] = array('link' => '^http://(www\.)?hotfile\.com/dl/(\d+/\w+)/', 'regex' => '(Downloading:)|("arrow_down")', 'szregex' => '\|</span> <strong>([\d|\.]+)\s+(\w{1,5})');
+$sites['ADrive.com'] = array('link' => '^http://(www\.)?adrive\.com/public/\w+\.html', 'regex' => '\/public\/view\/');
+$sites['Depositfiles.com'] = array('link' => '^http://(www\.)?depositfiles\.com/([a-z]{2}/)?files/', 'regex' => 'File name:', 'szregex' => 'File size: <b>([\d|\.]+)(?:\s|(?:&nbsp;))+(\w{1,5})', 'pattern' => '@(com/files/)|(com/[a-z]{2}/files/)@i', 'replace' => 'com/en/files/', 'options' => array('cookie' => 'lang_current=en'));
+$sites['Crocko.com'] = array('link' => '^http://((w\d+\.)|(www\.))?((easy-share)|(crocko))\.com/\d+(\.html)?', 'regex' => 'Download:', 'szregex' => 'class="tip1"><span class="inner">([\d|\.]+)\s+(\w{1,5})<', 'pattern' => '@((w\d+\.)|(www\.))?easy-share\.com@i', 'replace' => '${3}crocko.com');
+$sites['Uploading.com'] = array('link' => '^http://(www\.)?uploading\.com/files/\w+/?', 'regex' => 'class="file_size">([\d|\.]+)\s+(\w{1,5})</', 'szregex' => true, 'options' => array('cookie' => 'lang=1'));
+$sites['ZShare.net'] = array('link' => '^http://(www\.)?zshare\.net/(download|audio|video)/\w+/?', 'regex' => '(File Size: )|(/delete\.html\?)', 'szregex' => '(?:(?:Video)|(?:File)) Size: <font color="#\w{6}">([\d|\.]+)\s*(\w{1,5})<', 'options' => array('fixsize' => true));
+$sites['Netload.in'] = array('link' => '^http://(www\.)?netload\.in/datei\w+((\.htm)|(/))?', 'regex' => '(download_load)|(dl_first_file_download)', 'szregex' => 'style="color: #\w{6};">, ([\d|\.]+)\s+(\w{1,5})<', 'pattern' => '@\.in/(datei\w+)/.*@i', 'replace' => '.in/${1}.htm');
+$sites['Uploaded.to'] = array('link' => '^http://(www\.)?((uploaded\.to)|(ul\.to))/\w+', 'regex' => 'Download file:', 'szregex' => '\(([\d|\.|\,]+)\s+(\w{1,5})\) - uploaded\.to</title>');
+$sites['UploadStation.com'] = array('link' => '^http://(www\.)?uploadstation\.com/file/\w+', 'regex' => 'Upload date:', 'szregex' => 'File size: <b>([\d|\.]+)\s+(\w{1,5})<');
+$sites['Letitbit.net'] = array('link' => '^http://(www\.)?letitbit\.net/download/[^/]+/.+\.html', 'regex' => 'file_info_sssize=(\d+);', 'szregex' => true, 'options' => array('bytes' => true));
+$sites['Turbobit.net'] = array('link' => '^http://(www\.)?turbobit\.net/\w+((\.html)|(/.+\.html))', 'regex' => 'Download file:', 'szregex' => '</span>\t+\(([\d|\.|\,]+)\s+(\w{1,5})\)', 'options' => array('cookie' => 'user_lang=en'));
+$sites['2shared.com'] = array('link' => '^http://(www\.)?2shared\.com/[a-z]+/\w+/.+\.html?', 'regex' => '(File size:)|(Please enter password)|(Loading image)', 'szregex' => '(?:(?:File size:</span>\r?\n\s+)|(?:Loading image\s+\())([\d|\.|\,]+)\s+(\w{1,5})');
+$sites['4shared.com'] = array('link' => '^http://(www\.)?4shared\.com/[^/]+/\w+/.+\.html?', 'regex' => '(<h1 class=\"fileName[\s|\"])|(Please enter a password)', 'szregex' => '</a>[\r\n\s\t]*([\d|\.|\,]+)\s+(\w{1,5})\s*\|', 'pattern' => '@4shared\.com/get/@i', 'replace' => '4shared.com/file/', 'options' => array('cookie' => '4langcookie=en', 'fixsize' => true, 'fixsizeP' => ','));
+$sites['Badongo.com'] = array('link' => '^http://(www\.)?badongo\.com/([a-z]{2}/)?((file)|(vid))/\d+', 'regex' => "'((file)|(vid))_fileinfo'", 'szregex' => 'class="ffileinfo">[^\|]+\|[^:|<]+:\s+([\d|\.|\,]+)\s+(\w{1,5})<', 'options' => array('cookie' => 'badongoL=en'));
+$sites['Oron.com'] = array('link' => "^http://(www\.)?oron\.com/\w+", 'regex' => "Filename:", 'szregex' => 'File size: ([\d|\.|\,]+)\s+(\w{1,5})<', 'options' => array('cookie' => 'lang=english'));
+$sites['Shareflare.net'] = array('link' => "^http://(www\.)?shareflare\.net/download/[^/]+/.+\.html?", 'regex' => 'file_info_sssize=\d+;', 'szregex' => 'file_info_sssize=(\d+);', 'options' => array('bytes' => true));
+$sites['Bitshare.com'] = array('link' => "^http://(www\.)?bitshare\.com/((files/)|(\?f=))\w+(/.+(\.html)?)?", 'regex' => 'class="download"', 'szregex' => ' - ([\d|\.|\,]+)\s+(\w{1,2})\w{3}</h1>');
+$sites['Enterupload.com'] = array('link' => "^http://(www\.)?enterupload\.com/\w+(/.+(\.html)?)?", 'regex' => "File size:", 'szregex' => 'File size:\s+([\d|\.|\,]+)\s+(\w{1,5})', 'pattern' => '@/$@');
+
 ?>
